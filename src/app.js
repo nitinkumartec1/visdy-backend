@@ -29,10 +29,13 @@ app.use(
                 return callback(null, true);
             }
             // Otherwise, check against the configured origin(s)
-            const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : [];
+            const allowedOrigins = process.env.CORS_ORIGIN 
+                ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()) 
+                : [];
             if (process.env.CORS_ORIGIN === '*' || allowedOrigins.includes(origin)) {
                 return callback(null, true);
             }
+            console.log("CORS blocked request from origin:", origin);
             callback(new Error("Not allowed by CORS"));
         },
         credentials: true,
