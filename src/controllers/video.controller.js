@@ -7,7 +7,7 @@ import { Playlist } from "../models/playlist.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { uploadOnCloudinary, deleteFromCloudinary } from "../utils/cloudinary.js";
+import { uploadOnCloudinary, deleteFromCloudinary, generateUploadSignature } from "../utils/cloudinary.js";
 
 /* -------------------------------------------------------
    Utility: Escape special regex characters from user input
@@ -26,6 +26,16 @@ const ALLOWED_SORT_FIELDS = new Set([
   "views",
   "duration",
 ]);
+
+/* -------------------------------------------------------
+   GET /videos/generate-signature — Get Cloudinary Signature
+------------------------------------------------------- */
+const generateSignature = asyncHandler(async (req, res) => {
+  const signaturePayload = generateUploadSignature();
+  return res
+    .status(200)
+    .json(new ApiResponse(200, signaturePayload, "Upload signature generated successfully"));
+});
 
 /* -------------------------------------------------------
    GET /videos — List Videos with Pagination & Filtering
@@ -105,7 +115,7 @@ const getAllVideos = asyncHandler(async (req, res) => {
    POST /videos — Publish a New Video
 ------------------------------------------------------- */
 const publishAVideo = asyncHandler(async (req, res) => {
-  const { title, description } = req.body;
+  const { title, description, videoUrl, videoPublicId, thumbnailUrl, thumbnailPublicId, duration } = req.body;
 
   if (
     [title, description].some((field) => !field || field.trim() === "")
@@ -113,35 +123,19 @@ const publishAVideo = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Title and description are required");
   }
 
-  const videoFileLocalPath = req.files?.videoFile?.[0]?.path;
-  const thumbnailLocalPath = req.files?.thumbnail?.[0]?.path;
-
-  if (!videoFileLocalPath) {
-    throw new ApiError(400, "Video file is required");
-  }
-  if (!thumbnailLocalPath) {
-    throw new ApiError(400, "Thumbnail file is required");
-  }
-
-  const videoUpload = await uploadOnCloudinary(videoFileLocalPath);
-  const thumbnailUpload = await uploadOnCloudinary(thumbnailLocalPath);
-
-  if (!videoUpload) {
-    throw new ApiError(500, "Video upload failed");
-  }
-  if (!thumbnailUpload) {
-    throw new ApiError(500, "Thumbnail upload failed");
+  if (!videoUrl || !videoPublicId || !thumbnailUrl || !thumbnailPublicId) {
+    throw new ApiError(400, "Video and thumbnail details from Cloudinary are required");
   }
 
   try {
     const video = await Video.create({
-      videoFile: videoUpload.url,
-      videoFilePublicId: videoUpload.public_id,
-      thumbnail: thumbnailUpload.url,
-      thumbnailPublicId: thumbnailUpload.public_id,
+      videoFile: videoUrl,
+      videoFilePublicId: videoPublicId,
+      thumbnail: thumbnailUrl,
+      thumbnailPublicId: thumbnailPublicId,
       title,
       description,
-      duration: videoUpload.duration || 0,
+      duration: duration || 0,
       owner: req.user._id,
       isPublished: true,
     });
@@ -150,9 +144,6 @@ const publishAVideo = asyncHandler(async (req, res) => {
       .status(201)
       .json(new ApiResponse(201, video, "Video published successfully"));
   } catch (error) {
-    // Clean up uploaded assets if DB creation fails
-    deleteFromCloudinary(videoUpload.public_id, "video").catch(() => {});
-    deleteFromCloudinary(thumbnailUpload.public_id, "image").catch(() => {});
     throw new ApiError(500, "Database creation failed: " + error.message);
   }
 });
@@ -205,7 +196,7 @@ const updateVideo = asyncHandler(async (req, res) => {
     throw new ApiError(403, "You are not authorized to update this video");
   }
 
-  const { title, description } = req.body;
+  const { title, description, thumbnailUrl, thumbnailPublicId } = req.body;
 
   if (!title) {
     throw new ApiError(400, "Title is required");
@@ -214,23 +205,21 @@ const updateVideo = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Description is required");
   }
 
-  // Handle optional thumbnail update via file upload
-  let thumbnailUrl = video.thumbnail;
-  let thumbnailPublicId = video.thumbnailPublicId;
-  if (req.file?.path) {
-    const thumbnailUpload = await uploadOnCloudinary(req.file.path);
-    if (thumbnailUpload?.url) {
-      // Delete old thumbnail from Cloudinary
-      const oldPublicId = video.thumbnailPublicId || video.thumbnail;
-      deleteFromCloudinary(oldPublicId, "image").catch(() => {});
-      thumbnailUrl = thumbnailUpload.url;
-      thumbnailPublicId = thumbnailUpload.public_id;
-    }
+  // Handle optional thumbnail update via frontend Cloudinary upload
+  let updatedThumbnailUrl = video.thumbnail;
+  let updatedThumbnailPublicId = video.thumbnailPublicId;
+  
+  if (thumbnailUrl && thumbnailPublicId) {
+    // Optionally delete old thumbnail from Cloudinary here
+    const oldPublicId = video.thumbnailPublicId || video.thumbnail;
+    deleteFromCloudinary(oldPublicId, "image").catch(() => {});
+    updatedThumbnailUrl = thumbnailUrl;
+    updatedThumbnailPublicId = thumbnailPublicId;
   }
 
   const updatedVideo = await Video.findByIdAndUpdate(
     videoId,
-    { title, description, thumbnail: thumbnailUrl, thumbnailPublicId },
+    { title, description, thumbnail: updatedThumbnailUrl, thumbnailPublicId: updatedThumbnailPublicId },
     { new: true, runValidators: true }
   );
 
@@ -334,7 +323,7 @@ const togglePublishStatus = asyncHandler(async (req, res) => {
    POST /videos/edited — Publish an Edited Video
 ------------------------------------------------------- */
 const publishEditedVideo = asyncHandler(async (req, res) => {
-  const { title, description, editMetadata } = req.body;
+  const { title, description, editMetadata, videoUrl, videoPublicId, thumbnailUrl, thumbnailPublicId, duration } = req.body;
 
   if (
     [title, description].some((field) => !field || field.trim() === "")
@@ -342,43 +331,27 @@ const publishEditedVideo = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Title and description are required");
   }
 
-  const videoFileLocalPath = req.files?.videoFile?.[0]?.path;
-  const thumbnailLocalPath = req.files?.thumbnail?.[0]?.path;
-
-  if (!videoFileLocalPath) {
-    throw new ApiError(400, "Processed video file is required");
-  }
-  if (!thumbnailLocalPath) {
-    throw new ApiError(400, "Thumbnail file is required");
+  if (!videoUrl || !videoPublicId || !thumbnailUrl || !thumbnailPublicId) {
+    throw new ApiError(400, "Video and thumbnail details from Cloudinary are required");
   }
 
-  const videoUpload = await uploadOnCloudinary(videoFileLocalPath);
-  const thumbnailUpload = await uploadOnCloudinary(thumbnailLocalPath);
-
-  if (!videoUpload) {
-    throw new ApiError(500, "Video upload to Cloudinary failed");
-  }
-  if (!thumbnailUpload) {
-    throw new ApiError(500, "Thumbnail upload to Cloudinary failed");
-  }
-
-  // Parse editMetadata from stringified JSON (sent via FormData)
+  // Parse editMetadata (might be string if sent via FormData, or object if JSON)
   let parsedEditMetadata = {};
   try {
-    parsedEditMetadata = editMetadata ? JSON.parse(editMetadata) : {};
+    parsedEditMetadata = typeof editMetadata === 'string' ? JSON.parse(editMetadata) : (editMetadata || {});
   } catch {
     parsedEditMetadata = {};
   }
 
   try {
     const video = await Video.create({
-      videoFile: videoUpload.url,
-      videoFilePublicId: videoUpload.public_id,
-      thumbnail: thumbnailUpload.url,
-      thumbnailPublicId: thumbnailUpload.public_id,
+      videoFile: videoUrl,
+      videoFilePublicId: videoPublicId,
+      thumbnail: thumbnailUrl,
+      thumbnailPublicId: thumbnailPublicId,
       title,
       description,
-      duration: videoUpload.duration || 0,
+      duration: duration || 0,
       owner: req.user._id,
       isPublished: true,
       isEdited: true,
@@ -393,8 +366,6 @@ const publishEditedVideo = asyncHandler(async (req, res) => {
       .status(201)
       .json(new ApiResponse(201, video, "Edited video published successfully"));
   } catch (error) {
-    deleteFromCloudinary(videoUpload.public_id, "video").catch(() => {});
-    deleteFromCloudinary(thumbnailUpload.public_id, "image").catch(() => {});
     throw new ApiError(500, "Database creation failed: " + error.message);
   }
 });
@@ -407,4 +378,5 @@ export {
   updateVideo,
   deleteVideo,
   togglePublishStatus,
+  generateSignature,
 };

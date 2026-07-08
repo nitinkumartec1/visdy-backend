@@ -81,4 +81,24 @@ const deleteFromCloudinary = async (publicIdOrUrl, resourceType = "image") => {
     }
 };
 
-export { uploadOnCloudinary, deleteFromCloudinary };
+/**
+ * Generate a secure upload signature for direct-to-cloud uploads.
+ * This allows the frontend to upload directly to Cloudinary without exposing the API secret.
+ * @returns {object} Signature payload containing timestamp, signature, cloudName, and apiKey
+ */
+const generateUploadSignature = () => {
+    const timestamp = Math.round((new Date).getTime() / 1000);
+    const signature = cloudinary.utils.api_sign_request(
+        { timestamp: timestamp },
+        process.env.CLOUDINARY_API_SECRET
+    );
+
+    return {
+        timestamp,
+        signature,
+        cloudName: process.env.CLOUDINARY_CLOUD_NAME,
+        apiKey: process.env.CLOUDINARY_API_KEY,
+    };
+};
+
+export { uploadOnCloudinary, deleteFromCloudinary, generateUploadSignature };

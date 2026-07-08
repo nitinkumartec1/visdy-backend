@@ -7,12 +7,16 @@ import {
     updateVideo,
     deleteVideo,
     togglePublishStatus,
+    generateSignature,
 } from "../controllers/video.controller.js";
 
 import { verifyJWT } from "../middlewares/auth.middleware.js";
-import { upload, validateFileSizes } from "../middlewares/multer.middleware.js";
 
 const router = Router();
+
+// ✅ Signature route (protected)
+// MUST BE ABOVE /:videoId
+router.route("/generate-signature").get(verifyJWT, generateSignature);
 
 // ✅ Public routes (no JWT required)
 router.route("/").get(getAllVideos);
@@ -20,11 +24,6 @@ router.route("/").get(getAllVideos);
 // ✅ Protected routes (JWT required)
 router.route("/").post(
     verifyJWT,
-    upload.fields([
-        { name: "videoFile", maxCount: 1 },
-        { name: "thumbnail", maxCount: 1 },
-    ]),
-    validateFileSizes,
     publishAVideo
 );
 
@@ -32,11 +31,6 @@ router.route("/").post(
 // FIX: Moved ABOVE /:videoId so Express doesn't capture "edited" as a videoId
 router.route("/edited").post(
     verifyJWT,
-    upload.fields([
-        { name: "videoFile", maxCount: 1 },
-        { name: "thumbnail", maxCount: 1 },
-    ]),
-    validateFileSizes,
     publishEditedVideo
 );
 
@@ -50,6 +44,6 @@ router
     .route("/:videoId")
     .get(getVideoById)
     .delete(verifyJWT, deleteVideo)
-    .patch(verifyJWT, upload.single("thumbnail"), validateFileSizes, updateVideo);
+    .patch(verifyJWT, updateVideo);
 
 export default router;
