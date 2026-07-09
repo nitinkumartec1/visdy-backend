@@ -13,7 +13,8 @@ export default async function (req, res) {
     // Pass the request to the Express app
     return app(req, res);
   } catch (error) {
-    console.error("Error in serverless handler:", error);
-    res.status(500).json({ success: false, message: "Internal server error" });
+    console.error(`Error in serverless handler [${req.method} ${req.url}]:`, error.message);
+    console.error("Full error:", error);
+    res.status(500).json({ success: false, message: "Internal server error: " + error.message });
   }
 }

@@ -13,7 +13,7 @@ const connectDB = async () => {
     } catch (error) {
         console.error("CRITICAL: MongoDB connection error", error.message);
         console.error("Full Error Details:", error);
-        process.exit(1)
+        throw new Error("MongoDB connection failed: " + error.message);
     }
 }
 
