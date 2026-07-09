@@ -42,9 +42,16 @@ app.use(
     })
 );
 
-// FIX: Reduced JSON body limit from 500MB to 5MB.
-// File uploads go through multer (disk storage), not JSON body.
-// 500MB JSON limit enabled memory exhaustion DoS attacks.
+// FIX: Vercel serverless functions pre-parse req.body and consume the
+// raw stream. Express's json() then reads an empty stream and sets
+// req.body to undefined. This middleware skips body parsing when
+// Vercel has already parsed the body.
+app.use((req, res, next) => {
+    if (req.body !== undefined && req.body !== null && Object.keys(req.body).length > 0) {
+        return next(); // Body already parsed by Vercel — skip Express parsers
+    }
+    next();
+});
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 app.use(express.static("public"));
