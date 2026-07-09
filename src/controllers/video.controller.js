@@ -115,6 +115,9 @@ const getAllVideos = asyncHandler(async (req, res) => {
    POST /videos — Publish a New Video
 ------------------------------------------------------- */
 const publishAVideo = asyncHandler(async (req, res) => {
+  console.log("[publishAVideo] START - req.body:", JSON.stringify(req.body));
+  console.log("[publishAVideo] req.user:", req.user?._id);
+
   const { title, description, videoUrl, videoPublicId, thumbnailUrl, thumbnailPublicId, duration } = req.body;
 
   if (
@@ -124,10 +127,12 @@ const publishAVideo = asyncHandler(async (req, res) => {
   }
 
   if (!videoUrl || !videoPublicId || !thumbnailUrl || !thumbnailPublicId) {
+    console.log("[publishAVideo] Missing fields:", { videoUrl: !!videoUrl, videoPublicId: !!videoPublicId, thumbnailUrl: !!thumbnailUrl, thumbnailPublicId: !!thumbnailPublicId });
     throw new ApiError(400, "Video and thumbnail details from Cloudinary are required");
   }
 
   try {
+    console.log("[publishAVideo] Creating video in DB...");
     const video = await Video.create({
       videoFile: videoUrl,
       videoFilePublicId: videoPublicId,
@@ -140,10 +145,12 @@ const publishAVideo = asyncHandler(async (req, res) => {
       isPublished: true,
     });
 
+    console.log("[publishAVideo] SUCCESS - video._id:", video._id);
     return res
       .status(201)
       .json(new ApiResponse(201, video, "Video published successfully"));
   } catch (error) {
+    console.error("[publishAVideo] DB ERROR:", error.message);
     throw new ApiError(500, "Database creation failed: " + error.message);
   }
 });
