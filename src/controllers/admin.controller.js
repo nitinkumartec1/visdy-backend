@@ -93,8 +93,10 @@ const deleteUser = asyncHandler(async (req, res) => {
   // 1. Delete all videos by this user from DB and Cloudinary
   const userVideos = await Video.find({ owner: userId });
   for (const video of userVideos) {
-    await deleteFromCloudinary(video.videoFile, "video").catch(() => {});
-    await deleteFromCloudinary(video.thumbnail, "image").catch(() => {});
+    const vPublicId = video.videoFilePublicId || video.videoFile;
+    const tPublicId = video.thumbnailPublicId || video.thumbnail;
+    if (vPublicId) await deleteFromCloudinary(vPublicId, "video").catch(() => {});
+    if (tPublicId) await deleteFromCloudinary(tPublicId, "image").catch(() => {});
   }
   await Video.deleteMany({ owner: userId });
 
@@ -173,8 +175,10 @@ const deleteVideo = asyncHandler(async (req, res) => {
   }
 
   // Delete assets from Cloudinary
-  await deleteFromCloudinary(video.videoFile, "video").catch(() => {});
-  await deleteFromCloudinary(video.thumbnail, "image").catch(() => {});
+  const vPublicId = video.videoFilePublicId || video.videoFile;
+  const tPublicId = video.thumbnailPublicId || video.thumbnail;
+  if (vPublicId) await deleteFromCloudinary(vPublicId, "video").catch(() => {});
+  if (tPublicId) await deleteFromCloudinary(tPublicId, "image").catch(() => {});
 
   // Clean up references
   await Promise.all([
